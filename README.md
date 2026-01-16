@@ -5,91 +5,120 @@ A QuPath extension that remembers and restores dialog window positions across se
 ## Features
 
 - **Automatic position persistence**: Dialog positions and sizes are saved when closed and restored when reopened
-- **Off-screen recovery**: Automatically detects and recovers dialogs that are positioned on disconnected monitors
+- **Off-screen recovery**: Automatically detects and recovers dialogs positioned on disconnected monitors
 - **HiDPI awareness**: Handles display scaling changes and mixed-DPI multi-monitor setups
-- **Selective tracking**: Track all dialogs or only specific ones you care about
+- **Track all dialogs by default**: Works out-of-the-box with any QuPath dialog
 
 ## Installation
 
 1. Download the latest JAR from the releases
 2. Drag and drop onto QuPath, or copy to your QuPath extensions folder
 
-## Usage
+## Where to Find the Settings
 
-### Menu Items
+All Dialog Position Manager controls are located in the **Window** menu:
 
-The extension adds two items to the **Window** menu:
+| Menu Item | Description |
+|-----------|-------------|
+| **Window > Dialog Position Manager...** | Opens the full management UI |
+| **Window > Recover Off-Screen Dialogs** | Quick action to recover all lost dialogs |
 
-- **Dialog Position Manager...** - Opens a UI to view and manage all tracked dialogs
-- **Recover Off-Screen Dialogs** - Instantly centers any dialogs that are currently off-screen
+## Recovering a Lost Dialog
 
-### Recovering a Lost Window
+If a dialog window has moved off-screen or become inaccessible:
 
-If a dialog window has moved off-screen (common when disconnecting an external monitor):
+### Quick Recovery (All Dialogs)
 
 1. Go to **Window > Recover Off-Screen Dialogs**
-2. All off-screen dialogs will be centered on your primary monitor
+2. All off-screen dialogs will be instantly centered on your primary monitor
 
-Alternatively, use the Dialog Position Manager UI to:
-- See which dialogs are currently open or have saved positions
-- Center specific dialogs
-- Reset a dialog to its default position
-- Close dialogs remotely
+### Manual Recovery (Specific Dialog)
 
-### Resetting a Dialog Position
+1. Go to **Window > Dialog Position Manager...**
+2. Find the dialog in the list (off-screen dialogs are marked with `[OFF-SCREEN]` in orange)
+3. Select it and click **Center** to move it to your primary screen
 
-To reset a specific dialog to its default position:
+### Resetting to Default Position
+
+If a dialog keeps appearing in an unwanted location:
 
 1. Go to **Window > Dialog Position Manager...**
 2. Find the dialog in the list
-3. Click **Reset** to clear its saved position
+3. Click **Reset Position** to clear its saved position
+4. The next time the dialog opens, QuPath will use its default positioning
 
-The next time the dialog opens, it will use QuPath's default positioning.
+### Nuclear Option
 
-## Default Tracked Dialogs
+To clear ALL saved dialog positions and start fresh:
 
-By default, the extension tracks these common QuPath dialogs:
+1. Go to **Window > Dialog Position Manager...**
+2. Click **Clear All** (bottom right, in red)
 
-- Brightness & Contrast
-- Script editor
-- Log
-- Command list
-- Measurement table
-- Preferences
-- Objects / Annotations / Detections
-- Measurement maps
+## Known Limitations
 
-You can enable tracking of all dialogs through the Dialog Position Manager UI.
+The extension works well with most QuPath dialogs, but there are some cases where position restoration may not work:
+
+### Modal Dialogs
+
+Dialogs that block the UI (like Cell Detection, other analysis dialogs) have strict timing requirements. Position restoration usually works, but occasionally QuPath may override the position. If this happens, manually reposition the dialog and it should be remembered next time.
+
+### Dialogs with Dynamic Titles
+
+Dialogs whose titles change based on context (e.g., titles that include the current image name or file path) won't be recognized between sessions because the title is used as the identifier. Each unique title is treated as a separate dialog.
+
+### Dialogs That Force Centering
+
+Some dialogs are programmed to center themselves on their parent window every time they open. The extension attempts to override this by re-applying the saved position after the dialog shows, but some dialogs may resist.
+
+### First-Time Dialogs
+
+A dialog must be opened, positioned, and closed at least once before its position will be remembered. The first time you open any dialog, it will appear in QuPath's default location.
+
+## Dialog Position Manager UI
+
+The management UI (**Window > Dialog Position Manager...**) shows:
+
+- **Green `[OPEN]` indicator**: Dialog is currently visible
+- **Orange `[OFF-SCREEN]` warning**: Saved position is not visible on any connected monitor
+- **Position and size**: Current or last-known coordinates
+- **`[Modal]` tag**: Dialog blocks other windows when open
+
+### Available Actions
+
+| Button | Description |
+|--------|-------------|
+| **Center** | Move selected dialog to center of primary screen |
+| **Bring to Front** | Raise selected dialog above other windows |
+| **Reset Position** | Clear saved position (dialog will use default next time) |
+| **Clear All** | Remove all saved positions |
+
+Right-click on any dialog for a context menu with additional options.
 
 ## How It Works
 
 ### Position Storage
 
-Dialog positions are stored in **QuPath's preferences system**, which persists data in:
+Dialog positions are stored in QuPath's preferences system:
 
-- **Windows**: `%APPDATA%\QuPath\` (in the preferences file)
-- **macOS**: `~/Library/Preferences/` (QuPath preferences plist)
+- **Windows**: `%APPDATA%\QuPath\` (preferences file)
+- **macOS**: `~/Library/Preferences/` (QuPath preferences)
 - **Linux**: `~/.java/.userPrefs/` or equivalent
 
-The positions are stored as JSON under the preference key `dialogManager.positions`. Each dialog entry includes:
-
+Positions are stored as JSON under the preference key `dialogManager.positions`, including:
 - Window position (x, y coordinates)
 - Window size (width, height)
-- Screen index (which monitor it was on)
+- Screen index (which monitor)
 - Display scale factors (for HiDPI handling)
 
-### Validation on Restore
+### Position Restoration Process
 
-When a dialog reopens, the extension:
+When a tracked dialog opens:
 
-1. Checks if the saved position is still visible on any connected monitor
-2. Verifies that at least 100 pixels of the window would be accessible
-3. If the position is invalid (monitor disconnected, etc.), centers the dialog on the best available screen
-4. Detects display scale changes and handles them appropriately
-
-### Window Tracking
-
-The extension monitors JavaFX's window list and attaches listeners to track position changes. When a tracked window closes, its final position is saved to preferences.
+1. The extension checks for a saved position matching the dialog's title
+2. If found, validates that the position is visible on a connected monitor
+3. Sets the position BEFORE the dialog becomes visible (to prevent flicker)
+4. Re-applies the position AFTER the dialog shows (in case QuPath overrides it)
+5. If the saved position is off-screen, centers the dialog on the best available monitor
 
 ## Building from Source
 
