@@ -68,8 +68,8 @@ public final class DialogPositionManager {
     // Titles of windows to explicitly track (for testing specific dialogs)
     private final Set<String> targetedTitles = new HashSet<>();
 
-    // Whether to track all windows or only targeted ones
-    private boolean trackAllWindows = false;
+    // Whether to track all windows or only targeted ones (default: true for maximum usefulness)
+    private boolean trackAllWindows = true;
 
     private DialogPositionManager() {
         // Load saved states on initialization
@@ -310,29 +310,42 @@ public final class DialogPositionManager {
     private void onWindowAdded(Window window) {
         // Only track Stage instances
         if (!(window instanceof Stage stage)) {
+            logger.trace("Ignoring non-Stage window: {}", window.getClass().getSimpleName());
             return;
         }
 
         // Don't track the main QuPath window
         if (window == mainStage) {
+            logger.trace("Ignoring main QuPath window");
             return;
         }
 
+        String title = stage.getTitle();
+        logger.debug("Window added: '{}' (showing={})", title, window.isShowing());
+
         // If the window already has a title and should be tracked, process immediately
         if (shouldTrackWindow(window)) {
+            logger.info("Tracking window: '{}'", title);
             processNewWindow(window);
-        } else {
-            // Title might not be set yet - listen for title changes
+        } else if (title == null || title.isBlank()) {
+            // Title not set yet - listen for title changes
+            logger.debug("Window has no title yet, adding title listener");
             stage.titleProperty().addListener(new ChangeListener<>() {
                 @Override
                 public void changed(javafx.beans.value.ObservableValue<? extends String> obs,
                                     String oldTitle, String newTitle) {
-                    if (newTitle != null && !newTitle.isBlank() && shouldTrackWindow(window)) {
-                        stage.titleProperty().removeListener(this);
-                        processNewWindow(window);
+                    if (newTitle != null && !newTitle.isBlank()) {
+                        logger.debug("Window title set to: '{}'", newTitle);
+                        if (shouldTrackWindow(window)) {
+                            stage.titleProperty().removeListener(this);
+                            logger.info("Now tracking window: '{}'", newTitle);
+                            processNewWindow(window);
+                        }
                     }
                 }
             });
+        } else {
+            logger.debug("Window '{}' not tracked (excluded or trackAllWindows=false)", title);
         }
     }
 
@@ -342,18 +355,27 @@ public final class DialogPositionManager {
      */
     private void processNewWindow(Window window) {
         if (trackedWindows.containsKey(window)) {
+            logger.trace("Window already being tracked, skipping");
             return; // Already tracking
         }
 
         String windowId = getWindowId(window);
+        logger.debug("Processing new window: '{}' (showing={})", windowId, window.isShowing());
 
         // Check if we have a saved position BEFORE the window shows
         Map<String, DialogState> saved = DialogPositionPreferences.loadAll();
         DialogState savedState = saved.get(windowId);
 
+        if (savedState != null) {
+            logger.info("Found saved position for '{}': ({}, {})", windowId, savedState.x(), savedState.y());
+        } else {
+            logger.debug("No saved position for '{}'", windowId);
+        }
+
         if (window.isShowing()) {
             // Window already showing - restore position now (may cause brief jump)
             if (savedState != null) {
+                logger.info("Restoring position for '{}' (window already showing)", windowId);
                 restoreWindowPositionWithValidation(window, savedState);
             }
             startTracking(window);
@@ -362,8 +384,8 @@ public final class DialogPositionManager {
             // Set position BEFORE show to prevent default centering
             if (savedState != null) {
                 // Pre-set the position before the window shows
+                logger.info("Pre-setting position for '{}' BEFORE show", windowId);
                 restoreWindowPositionWithValidation(window, savedState);
-                logger.debug("Pre-set position for {} before show", windowId);
             }
 
             // Wait for showing to complete before starting full tracking
@@ -375,6 +397,7 @@ public final class DialogPositionManager {
                         window.showingProperty().removeListener(this);
                         // Re-apply position after show in case QuPath overrode it
                         if (savedState != null) {
+                            logger.debug("Re-applying position for '{}' after show", windowId);
                             Platform.runLater(() -> restoreWindowPositionWithValidation(window, savedState));
                         }
                         startTracking(window);
