@@ -1,4 +1,5 @@
 plugins {
+    id("com.gradleup.shadow") version "8.3.5"
     id("qupath-conventions")
 }
 
@@ -9,6 +10,11 @@ qupathExtension {
     version = "0.1.0-SNAPSHOT"
     description = "A QuPath extension for managing dialog window positions with persistence and recovery."
     automaticModule = "io.github.qupath.extension.dialogmanager"
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
 }
 
 dependencies {
