@@ -308,23 +308,77 @@ public final class DialogPositionManager {
     }
 
     private void onWindowAdded(Window window) {
+        // Only track Stage instances
+        if (!(window instanceof Stage stage)) {
+            return;
+        }
+
+        // Don't track the main QuPath window
+        if (window == mainStage) {
+            return;
+        }
+
+        // If the window already has a title and should be tracked, process immediately
         if (shouldTrackWindow(window)) {
-            // Delay slightly to ensure window properties are set
-            Platform.runLater(() -> {
-                if (window.isShowing()) {
-                    startTracking(window);
-                } else {
-                    // Wait for showing property to become true
-                    window.showingProperty().addListener(new ChangeListener<>() {
-                        @Override
-                        public void changed(javafx.beans.value.ObservableValue<? extends Boolean> obs,
-                                            Boolean wasShowing, Boolean isShowing) {
-                            if (isShowing) {
-                                window.showingProperty().removeListener(this);
-                                startTracking(window);
-                            }
+            processNewWindow(window);
+        } else {
+            // Title might not be set yet - listen for title changes
+            stage.titleProperty().addListener(new ChangeListener<>() {
+                @Override
+                public void changed(javafx.beans.value.ObservableValue<? extends String> obs,
+                                    String oldTitle, String newTitle) {
+                    if (newTitle != null && !newTitle.isBlank() && shouldTrackWindow(window)) {
+                        stage.titleProperty().removeListener(this);
+                        processNewWindow(window);
+                    }
+                }
+            });
+        }
+    }
+
+    /**
+     * Process a new window that should be tracked.
+     * Restores position BEFORE the window shows to prevent visual jumping.
+     */
+    private void processNewWindow(Window window) {
+        if (trackedWindows.containsKey(window)) {
+            return; // Already tracking
+        }
+
+        String windowId = getWindowId(window);
+
+        // Check if we have a saved position BEFORE the window shows
+        Map<String, DialogState> saved = DialogPositionPreferences.loadAll();
+        DialogState savedState = saved.get(windowId);
+
+        if (window.isShowing()) {
+            // Window already showing - restore position now (may cause brief jump)
+            if (savedState != null) {
+                restoreWindowPositionWithValidation(window, savedState);
+            }
+            startTracking(window);
+        } else {
+            // Window not yet showing - this is ideal!
+            // Set position BEFORE show to prevent default centering
+            if (savedState != null) {
+                // Pre-set the position before the window shows
+                restoreWindowPositionWithValidation(window, savedState);
+                logger.debug("Pre-set position for {} before show", windowId);
+            }
+
+            // Wait for showing to complete before starting full tracking
+            window.showingProperty().addListener(new ChangeListener<>() {
+                @Override
+                public void changed(javafx.beans.value.ObservableValue<? extends Boolean> obs,
+                                    Boolean wasShowing, Boolean isShowing) {
+                    if (isShowing) {
+                        window.showingProperty().removeListener(this);
+                        // Re-apply position after show in case QuPath overrode it
+                        if (savedState != null) {
+                            Platform.runLater(() -> restoreWindowPositionWithValidation(window, savedState));
                         }
-                    });
+                        startTracking(window);
+                    }
                 }
             });
         }
