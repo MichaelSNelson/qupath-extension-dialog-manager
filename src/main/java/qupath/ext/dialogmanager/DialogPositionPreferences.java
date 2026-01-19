@@ -27,9 +27,8 @@ public final class DialogPositionPreferences {
 
     private static final String PREF_KEY = "dialogManager.positions";
 
-    private static final Gson GSON = new GsonBuilder()
-            .setPrettyPrinting()
-            .create();
+    // Note: No pretty printing to stay within Java Preferences 8192 char limit
+    private static final Gson GSON = new GsonBuilder().create();
 
     private static final Type STATE_MAP_TYPE = new TypeToken<Map<String, SerializedState>>() {}.getType();
 
