@@ -74,6 +74,35 @@ Some dialogs are programmed to center themselves on their parent window every ti
 
 A dialog must be opened, positioned, and closed at least once before its position will be remembered. The first time you open any dialog, it will appear in QuPath's default location.
 
+## Issues
+
+### "Value too long" Error (Fixed in v0.2.0)
+
+In versions prior to 0.2.0, the extension could accumulate garbage entries in the preferences for dialogs that didn't have titles set. This caused the preferences JSON to exceed Java's 8192 byte limit, resulting in errors like:
+
+```
+java.lang.IllegalArgumentException: Value too long: {...}
+```
+
+**Fix:** Update to version 0.2.0 or later. The extension now automatically cleans up garbage entries on startup.
+
+**Workaround for older versions:** If you cannot update immediately, run this script in QuPath's Script Editor to clear the corrupted preferences:
+
+```groovy
+import java.util.prefs.Preferences
+
+// Get QuPath's preferences node
+def prefs = Preferences.userRoot().node("/io/github/qupath")
+
+// Remove the corrupted dialog positions
+prefs.remove("dialogManager.positions")
+prefs.flush()
+
+println "Cleared dialog position preferences"
+```
+
+After running this script, restart QuPath. Your dialog positions will need to be re-saved, but the error will be resolved.
+
 ## Dialog Position Manager UI
 
 The management UI (**Window > Dialog Position Manager...**) shows:

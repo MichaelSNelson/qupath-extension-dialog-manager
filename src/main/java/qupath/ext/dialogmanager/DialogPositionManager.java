@@ -414,12 +414,20 @@ public final class DialogPositionManager {
 
             // Save final position with current scale factors
             DialogState finalState = createStateFromWindow(window).withOpenStatus(false);
-            DialogPositionPreferences.save(finalState);
+            String windowId = finalState.windowId();
+
+            // Only save state for windows with proper titles, not hash-code fallbacks
+            // Hash-code fallbacks (like "@926214965") are not useful for persistence
+            // since they change every time a window is created
+            if (windowId != null && !windowId.startsWith("@")) {
+                DialogPositionPreferences.save(finalState);
+                logger.debug("Window removed and state saved: {}", windowId);
+            } else {
+                logger.trace("Window removed but not saved (fallback ID): {}", windowId);
+            }
 
             // Update our observable list
             updateDialogState(finalState);
-
-            logger.debug("Window removed and state saved: {}", finalState.windowId());
         }
     }
 
@@ -721,7 +729,10 @@ public final class DialogPositionManager {
 
         private void saveCurrentState() {
             DialogState state = createStateFromWindow(window).withOpenStatus(false);
-            DialogPositionPreferences.save(state);
+            // Only save state for windows with proper titles, not hash-code fallbacks
+            if (state.windowId() != null && !state.windowId().startsWith("@")) {
+                DialogPositionPreferences.save(state);
+            }
         }
     }
 }

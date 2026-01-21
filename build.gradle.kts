@@ -7,7 +7,7 @@ plugins {
 qupathExtension {
     name = "qupath-extension-dialog-manager"
     group = "io.github.qupath"
-    version = "0.1.0-SNAPSHOT"
+    version = "0.2.0-SNAPSHOT"
     description = "A QuPath extension for managing dialog window positions with persistence and recovery."
     automaticModule = "io.github.qupath.extension.dialogmanager"
 }

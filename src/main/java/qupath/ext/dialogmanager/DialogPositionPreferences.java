@@ -41,6 +41,9 @@ public final class DialogPositionPreferences {
 
     /**
      * Initialize the preference property. Must be called during extension installation.
+     * <p>
+     * This also performs automatic cleanup of any garbage fallback entries that may
+     * have accumulated from previous versions.
      */
     public static void initialize() {
         if (positionsJsonProperty == null) {
@@ -51,6 +54,18 @@ public final class DialogPositionPreferences {
                     s -> s
             );
             logger.debug("DialogPositionPreferences initialized");
+
+            // Automatically clean up any garbage fallback entries from previous sessions
+            // This fixes the "Value too long" error caused by accumulated hash-code IDs
+            try {
+                int removed = cleanupFallbackEntries();
+                if (removed > 0) {
+                    logger.info("Automatically cleaned up {} garbage dialog position entries", removed);
+                }
+            } catch (Exception e) {
+                // If cleanup fails, just log and continue - it's not critical
+                logger.warn("Failed to cleanup fallback entries: {}", e.getMessage());
+            }
         }
     }
 
@@ -90,7 +105,16 @@ public final class DialogPositionPreferences {
     }
 
     /**
+     * Maximum length for the JSON string to stay under Java Preferences limit (8192 bytes).
+     * Using a conservative limit to allow for encoding overhead.
+     */
+    private static final int MAX_JSON_LENGTH = 7500;
+
+    /**
      * Save all dialog states to preferences.
+     * <p>
+     * Filters out fallback hash-code based IDs (starting with "@") since these are
+     * not useful for persistence - they change every time a window is created.
      *
      * @param states Map of windowId to DialogState
      */
@@ -99,13 +123,31 @@ public final class DialogPositionPreferences {
         try {
             Map<String, SerializedState> serialized = new HashMap<>();
             for (var entry : states.entrySet()) {
-                serialized.put(entry.getKey(), SerializedState.fromDialogState(entry.getValue()));
+                String key = entry.getKey();
+                // Skip hash-code fallback IDs (e.g., "@926214965") - they are not reusable
+                // and cause the preferences to grow unboundedly
+                if (key != null && !key.startsWith("@")) {
+                    serialized.put(key, SerializedState.fromDialogState(entry.getValue()));
+                }
             }
 
             String json = GSON.toJson(serialized, STATE_MAP_TYPE);
-            positionsJsonProperty.set(json);
 
-            logger.debug("Saved {} dialog positions to preferences", states.size());
+            // Safety check: if JSON is still too long, truncate oldest entries
+            if (json.length() > MAX_JSON_LENGTH) {
+                logger.warn("Dialog positions JSON too large ({} chars), pruning entries", json.length());
+                // Remove entries until we're under the limit (keep most recently accessed)
+                while (json.length() > MAX_JSON_LENGTH && !serialized.isEmpty()) {
+                    // Remove first entry (arbitrary, but prevents infinite loop)
+                    String firstKey = serialized.keySet().iterator().next();
+                    serialized.remove(firstKey);
+                    json = GSON.toJson(serialized, STATE_MAP_TYPE);
+                    logger.debug("Removed dialog position for '{}' to reduce size", firstKey);
+                }
+            }
+
+            positionsJsonProperty.set(json);
+            logger.debug("Saved {} dialog positions to preferences", serialized.size());
 
         } catch (Exception e) {
             logger.error("Failed to save dialog positions: {}", e.getMessage(), e);
@@ -147,6 +189,34 @@ public final class DialogPositionPreferences {
         initialize();
         positionsJsonProperty.set("{}");
         logger.info("Cleared all saved dialog positions");
+    }
+
+    /**
+     * Remove fallback hash-code based entries from saved preferences.
+     * <p>
+     * This cleans up garbage entries that were created for windows without titles.
+     * These entries use IDs like "@926214965" which are not reusable across sessions.
+     *
+     * @return The number of entries removed
+     */
+    public static int cleanupFallbackEntries() {
+        Map<String, DialogState> all = loadAll();
+        int originalSize = all.size();
+
+        // Remove entries with hash-code fallback IDs
+        all.entrySet().removeIf(entry -> {
+            String key = entry.getKey();
+            return key != null && key.startsWith("@");
+        });
+
+        int removed = originalSize - all.size();
+
+        if (removed > 0) {
+            saveAll(all);
+            logger.info("Cleaned up {} fallback dialog position entries", removed);
+        }
+
+        return removed;
     }
 
     /**
