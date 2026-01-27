@@ -244,12 +244,14 @@ public final class DialogPositionPreferences {
         static SerializedState fromDialogState(DialogState state) {
             SerializedState s = new SerializedState();
             s.title = state.title();
-            s.x = state.x();
-            s.y = state.y();
-            s.width = state.width();
-            s.height = state.height();
+            // Round position and size to integers - sub-pixel precision wastes JSON space
+            s.x = Math.round(state.x());
+            s.y = Math.round(state.y());
+            s.width = Math.round(state.width());
+            s.height = Math.round(state.height());
             s.modality = state.modality().name();
             s.screenIndex = state.screenIndex();
+            // Keep scale factors as-is (HiDPI detection needs decimal precision)
             s.scaleX = state.savedScaleX();
             s.scaleY = state.savedScaleY();
             return s;
