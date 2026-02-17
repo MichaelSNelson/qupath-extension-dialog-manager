@@ -26,7 +26,7 @@ dependencies {
 
     // For testing
     testImplementation(libs.bundles.qupath)
-    testImplementation("org.junit.jupiter:junit-jupiter:5.9.1")
+    testImplementation("org.junit.jupiter:junit-jupiter:6.0.3")
     testImplementation(libs.bundles.logging)
 }
 
