@@ -2,14 +2,14 @@ package qupath.ext.dialogmanager;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.reflect.TypeToken;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import javafx.beans.property.ObjectProperty;
 import javafx.stage.Modality;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.lib.gui.prefs.PathPrefs;
 
-import java.lang.reflect.Type;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -29,8 +29,6 @@ public final class DialogPositionPreferences {
 
     // Note: No pretty printing to stay within Java Preferences 8192 char limit
     private static final Gson GSON = new GsonBuilder().create();
-
-    private static final Type STATE_MAP_TYPE = new TypeToken<Map<String, SerializedState>>() {}.getType();
 
     // Property for the raw JSON string storage
     private static ObjectProperty<String> positionsJsonProperty;
@@ -71,6 +69,7 @@ public final class DialogPositionPreferences {
 
     /**
      * Load all saved dialog states from preferences.
+     * Handles both the current compact format and the legacy verbose format.
      *
      * @return Map of windowId to DialogState, never null
      */
@@ -82,16 +81,14 @@ public final class DialogPositionPreferences {
                 return new HashMap<>();
             }
 
-            Map<String, SerializedState> serialized = GSON.fromJson(json, STATE_MAP_TYPE);
-            if (serialized == null) {
-                return new HashMap<>();
-            }
-
+            JsonObject root = JsonParser.parseString(json).getAsJsonObject();
             Map<String, DialogState> result = new HashMap<>();
-            for (var entry : serialized.entrySet()) {
-                DialogState state = entry.getValue().toDialogState(entry.getKey());
-                if (state != null) {
+            for (var entry : root.entrySet()) {
+                try {
+                    DialogState state = jsonToState(entry.getKey(), entry.getValue().getAsJsonObject());
                     result.put(entry.getKey(), state);
+                } catch (Exception e) {
+                    logger.debug("Skipping invalid entry '{}': {}", entry.getKey(), e.getMessage());
                 }
             }
 
@@ -111,8 +108,15 @@ public final class DialogPositionPreferences {
     private static final int MAX_JSON_LENGTH = 7500;
 
     /**
-     * Save all dialog states to preferences.
+     * Save all dialog states to preferences using compact JSON format.
      * <p>
+     * Compact format optimizations:
+     * <ul>
+     *     <li>Short key names: w/h/m/si/sx/sy instead of width/height/modality/etc.</li>
+     *     <li>Integer coordinates: no ".0" suffix on position/size values</li>
+     *     <li>Default omission: modality=NONE, screenIndex=0, scale=1.0 are not written</li>
+     *     <li>No redundant title: map key serves as both windowId and title</li>
+     * </ul>
      * Filters out fallback hash-code based IDs (starting with "@") since these are
      * not useful for persistence - they change every time a window is created.
      *
@@ -121,33 +125,31 @@ public final class DialogPositionPreferences {
     public static void saveAll(Map<String, DialogState> states) {
         initialize();
         try {
-            Map<String, SerializedState> serialized = new HashMap<>();
+            JsonObject root = new JsonObject();
             for (var entry : states.entrySet()) {
                 String key = entry.getKey();
                 // Skip hash-code fallback IDs (e.g., "@926214965") - they are not reusable
                 // and cause the preferences to grow unboundedly
                 if (key != null && !key.startsWith("@")) {
-                    serialized.put(key, SerializedState.fromDialogState(entry.getValue()));
+                    root.add(key, stateToJson(entry.getValue()));
                 }
             }
 
-            String json = GSON.toJson(serialized, STATE_MAP_TYPE);
+            String json = GSON.toJson(root);
 
-            // Safety check: if JSON is still too long, truncate oldest entries
+            // Safety check: if JSON is still too long, prune entries
             if (json.length() > MAX_JSON_LENGTH) {
                 logger.warn("Dialog positions JSON too large ({} chars), pruning entries", json.length());
-                // Remove entries until we're under the limit (keep most recently accessed)
-                while (json.length() > MAX_JSON_LENGTH && !serialized.isEmpty()) {
-                    // Remove first entry (arbitrary, but prevents infinite loop)
-                    String firstKey = serialized.keySet().iterator().next();
-                    serialized.remove(firstKey);
-                    json = GSON.toJson(serialized, STATE_MAP_TYPE);
+                while (json.length() > MAX_JSON_LENGTH && root.size() > 0) {
+                    String firstKey = root.keySet().iterator().next();
+                    root.remove(firstKey);
+                    json = GSON.toJson(root);
                     logger.debug("Removed dialog position for '{}' to reduce size", firstKey);
                 }
             }
 
             positionsJsonProperty.set(json);
-            logger.debug("Saved {} dialog positions to preferences", serialized.size());
+            logger.debug("Saved {} dialog positions to preferences", root.size());
 
         } catch (Exception e) {
             logger.error("Failed to save dialog positions: {}", e.getMessage(), e);
@@ -226,50 +228,81 @@ public final class DialogPositionPreferences {
         return Collections.unmodifiableMap(loadAll());
     }
 
+    // --- Compact JSON serialization / deserialization ---
+
     /**
-     * Internal class for JSON serialization.
-     * Uses simple types that Gson can handle without custom adapters.
+     * Serialize a DialogState to a compact JsonObject.
+     * Only includes non-default values to minimize JSON size.
      */
-    private static class SerializedState {
-        String title;
-        double x;
-        double y;
-        double width;
-        double height;
-        String modality;
-        int screenIndex;
-        double scaleX = 1.0;  // Default for backward compatibility
-        double scaleY = 1.0;  // Default for backward compatibility
+    private static JsonObject stateToJson(DialogState state) {
+        JsonObject obj = new JsonObject();
+        obj.addProperty("x", (int) Math.round(state.x()));
+        obj.addProperty("y", (int) Math.round(state.y()));
+        obj.addProperty("w", (int) Math.round(state.width()));
+        obj.addProperty("h", (int) Math.round(state.height()));
+        // Only include non-default values
+        if (state.modality() != Modality.NONE) {
+            obj.addProperty("m", state.modality().name());
+        }
+        if (state.screenIndex() != 0) {
+            obj.addProperty("si", state.screenIndex());
+        }
+        if (state.savedScaleX() != 1.0) {
+            obj.addProperty("sx", state.savedScaleX());
+        }
+        if (state.savedScaleY() != 1.0) {
+            obj.addProperty("sy", state.savedScaleY());
+        }
+        return obj;
+    }
 
-        static SerializedState fromDialogState(DialogState state) {
-            SerializedState s = new SerializedState();
-            s.title = state.title();
-            // Round position and size to integers - sub-pixel precision wastes JSON space
-            s.x = Math.round(state.x());
-            s.y = Math.round(state.y());
-            s.width = Math.round(state.width());
-            s.height = Math.round(state.height());
-            s.modality = state.modality().name();
-            s.screenIndex = state.screenIndex();
-            // Keep scale factors as-is (HiDPI detection needs decimal precision)
-            s.scaleX = state.savedScaleX();
-            s.scaleY = state.savedScaleY();
-            return s;
+    /**
+     * Deserialize a JsonObject to a DialogState.
+     * Handles both the current compact format and the legacy verbose format.
+     */
+    private static DialogState jsonToState(String windowId, JsonObject obj) {
+        int x = getInt(obj, "x", null, 0);
+        int y = getInt(obj, "y", null, 0);
+        int w = getInt(obj, "w", "width", 0);
+        int h = getInt(obj, "h", "height", 0);
+
+        String modStr = getString(obj, "m", "modality", "NONE");
+        Modality mod = Modality.NONE;
+        try {
+            mod = Modality.valueOf(modStr);
+        } catch (IllegalArgumentException e) {
+            // Keep default
         }
 
-        DialogState toDialogState(String windowId) {
-            Modality mod = Modality.NONE;
-            try {
-                if (modality != null) {
-                    mod = Modality.valueOf(modality);
-                }
-            } catch (IllegalArgumentException e) {
-                // Keep default
-            }
-            // Handle missing scale factors from older saved data
-            double sx = (scaleX > 0) ? scaleX : 1.0;
-            double sy = (scaleY > 0) ? scaleY : 1.0;
-            return new DialogState(windowId, title, x, y, width, height, mod, false, screenIndex, sx, sy);
-        }
+        int si = getInt(obj, "si", "screenIndex", 0);
+        double sx = getDouble(obj, "sx", "scaleX", 1.0);
+        double sy = getDouble(obj, "sy", "scaleY", 1.0);
+
+        // Legacy format stored title redundantly; use map key as title
+        String title = obj.has("title") ? obj.get("title").getAsString() : windowId;
+
+        return new DialogState(windowId, title, x, y, w, h, mod, false, si,
+                sx > 0 ? sx : 1.0, sy > 0 ? sy : 1.0);
+    }
+
+    /** Get an int from a JsonObject, checking primary key then alternate key. */
+    private static int getInt(JsonObject obj, String key, String altKey, int defaultVal) {
+        if (obj.has(key)) return obj.get(key).getAsInt();
+        if (altKey != null && obj.has(altKey)) return obj.get(altKey).getAsInt();
+        return defaultVal;
+    }
+
+    /** Get a double from a JsonObject, checking primary key then alternate key. */
+    private static double getDouble(JsonObject obj, String key, String altKey, double defaultVal) {
+        if (obj.has(key)) return obj.get(key).getAsDouble();
+        if (altKey != null && obj.has(altKey)) return obj.get(altKey).getAsDouble();
+        return defaultVal;
+    }
+
+    /** Get a String from a JsonObject, checking primary key then alternate key. */
+    private static String getString(JsonObject obj, String key, String altKey, String defaultVal) {
+        if (obj.has(key)) return obj.get(key).getAsString();
+        if (altKey != null && obj.has(altKey)) return obj.get(altKey).getAsString();
+        return defaultVal;
     }
 }
