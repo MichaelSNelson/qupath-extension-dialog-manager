@@ -71,6 +71,9 @@ public final class DialogPositionManager {
     // Whether to track all windows or only targeted ones (default: true for maximum usefulness)
     private boolean trackAllWindows = true;
 
+    // Whether to log routine tracking/restore messages at INFO (true) or DEBUG (false)
+    private boolean verboseLogging = false;
+
     private DialogPositionManager() {
         // Load saved states on initialization
         loadSavedStates();
@@ -143,6 +146,21 @@ public final class DialogPositionManager {
      */
     public void removeTargetedTitle(String title) {
         targetedTitles.remove(title);
+    }
+
+    /**
+     * Check whether verbose logging is enabled.
+     */
+    public boolean isVerboseLogging() {
+        return verboseLogging;
+    }
+
+    /**
+     * Set whether routine tracking/restore messages are logged at INFO level.
+     * When false (default), these messages are logged at DEBUG level to reduce noise.
+     */
+    public void setVerboseLogging(boolean verbose) {
+        this.verboseLogging = verbose;
     }
 
     /**
@@ -291,6 +309,19 @@ public final class DialogPositionManager {
 
     // ========== Private Methods ==========
 
+    /**
+     * Log a message at INFO when verbose logging is on, DEBUG otherwise.
+     * Used for routine tracking/restore messages that are useful for debugging
+     * but create noise during normal use.
+     */
+    private void logVerbose(String msg, Object... args) {
+        if (verboseLogging) {
+            logger.info(msg, args);
+        } else {
+            logger.debug(msg, args);
+        }
+    }
+
     private void logScreenConfiguration() {
         logger.info("Screen configuration at startup:\n{}", getScreenDiagnostics());
     }
@@ -325,7 +356,7 @@ public final class DialogPositionManager {
 
         // If the window already has a title and should be tracked, process immediately
         if (shouldTrackWindow(window)) {
-            logger.info("Tracking window: '{}'", title);
+            logVerbose("Tracking window: '{}'", title);
             processNewWindow(window);
         } else if (title == null || title.isBlank()) {
             // Title not set yet - listen for title changes
@@ -338,7 +369,7 @@ public final class DialogPositionManager {
                         logger.debug("Window title set to: '{}'", newTitle);
                         if (shouldTrackWindow(window)) {
                             stage.titleProperty().removeListener(this);
-                            logger.info("Now tracking window: '{}'", newTitle);
+                            logVerbose("Now tracking window: '{}'", newTitle);
                             processNewWindow(window);
                         }
                     }
@@ -367,7 +398,7 @@ public final class DialogPositionManager {
         DialogState savedState = saved.get(windowId);
 
         if (savedState != null) {
-            logger.info("Found saved position for '{}': ({}, {})", windowId, savedState.x(), savedState.y());
+            logVerbose("Found saved position for '{}': ({}, {})", windowId, savedState.x(), savedState.y());
         } else {
             logger.debug("No saved position for '{}'", windowId);
         }
@@ -375,7 +406,7 @@ public final class DialogPositionManager {
         if (window.isShowing()) {
             // Window already showing - restore position now (may cause brief jump)
             if (savedState != null) {
-                logger.info("Restoring position for '{}' (window already showing)", windowId);
+                logVerbose("Restoring position for '{}' (window already showing)", windowId);
                 restoreWindowPositionWithValidation(window, savedState);
             }
             startTracking(window);
@@ -384,7 +415,7 @@ public final class DialogPositionManager {
             // Set position BEFORE show to prevent default centering
             if (savedState != null) {
                 // Pre-set the position before the window shows
-                logger.info("Pre-setting position for '{}' BEFORE show", windowId);
+                logVerbose("Pre-setting position for '{}' BEFORE show", windowId);
                 restoreWindowPositionWithValidation(window, savedState);
             }
 
@@ -521,7 +552,7 @@ public final class DialogPositionManager {
         } else if (positionValid && scaleChanged) {
             // Scale changed but position is still visible - restore but log warning
             restoreWindowPosition(window, savedState);
-            logger.info("Restored {} with scale change (position still valid)", savedState.windowId());
+            logVerbose("Restored {} with scale change (position still valid)", savedState.windowId());
 
         } else {
             // Position is off-screen or invalid - center on best available screen

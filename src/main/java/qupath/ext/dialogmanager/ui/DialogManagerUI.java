@@ -122,10 +122,19 @@ public class DialogManagerUI {
             manager.setTrackAllWindows(trackAllCheckbox.isSelected());
         });
 
+        // Verbose logging checkbox
+        CheckBox verboseLogCheckbox = new CheckBox("Verbose logging");
+        verboseLogCheckbox.setTooltip(new Tooltip(
+                "Log detailed tracking and position restore messages.\n" +
+                "Useful for debugging. Off by default to reduce log noise."));
+        verboseLogCheckbox.setOnAction(e -> {
+            manager.setVerboseLogging(verboseLogCheckbox.isSelected());
+        });
+
         // Screen info
         Label screenInfo = createScreenInfoLabel();
 
-        topBox.getChildren().addAll(descLabel, trackAllCheckbox, new Separator(), screenInfo);
+        topBox.getChildren().addAll(descLabel, trackAllCheckbox, verboseLogCheckbox, new Separator(), screenInfo);
         return topBox;
     }
 
