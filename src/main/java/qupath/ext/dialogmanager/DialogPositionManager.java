@@ -233,6 +233,8 @@ public final class DialogPositionManager {
 
     /**
      * Reset a dialog to default position (remove saved position).
+     * If the dialog is currently open, it remains in the list with updated state.
+     * If it is closed, the entry is removed since there is no saved position to display.
      *
      * @param windowId The window ID to reset
      */
@@ -240,10 +242,33 @@ public final class DialogPositionManager {
         if (windowId == null) return;
         DialogPositionPreferences.remove(windowId);
 
-        // Update our state list (must be on FX thread since it backs a UI list)
-        Platform.runLater(() -> dialogStates.removeIf(s -> windowId.equals(s.windowId())));
+        // If the window is currently open, refresh its state from the live window
+        // rather than removing it from the list entirely
+        Window openWindow = findOpenWindow(windowId);
+        if (openWindow != null) {
+            DialogState freshState = createStateFromWindow(openWindow).withOpenStatus(true);
+            updateDialogState(freshState);
+            logger.info("Reset saved position for open dialog: {}", windowId);
+        } else {
+            // Closed dialog with no saved position -- remove from list
+            Platform.runLater(() -> dialogStates.removeIf(s -> windowId.equals(s.windowId())));
+            logger.info("Reset dialog position to default: {}", windowId);
+        }
+    }
 
-        logger.info("Reset dialog position to default: {}", windowId);
+    /**
+     * Find a currently open (tracked) window by its ID.
+     *
+     * @param windowId The window ID to find
+     * @return The window if found and showing, null otherwise
+     */
+    private Window findOpenWindow(String windowId) {
+        for (var entry : trackedWindows.entrySet()) {
+            if (windowId.equals(getWindowId(entry.getKey())) && entry.getKey().isShowing()) {
+                return entry.getKey();
+            }
+        }
+        return null;
     }
 
     /**

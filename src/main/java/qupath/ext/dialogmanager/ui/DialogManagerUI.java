@@ -249,7 +249,8 @@ public class DialogManagerUI {
                     DialogState sel = dialogListView.getSelectionModel().getSelectedItem();
                     return sel == null || !sel.isCurrentlyOpen();
                 },
-                dialogListView.getSelectionModel().selectedItemProperty()
+                dialogListView.getSelectionModel().selectedItemProperty(),
+                manager.getDialogStates()
         ));
         centerBtn.setOnAction(e -> {
             DialogState selected = dialogListView.getSelectionModel().getSelectedItem();
