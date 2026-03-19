@@ -330,21 +330,6 @@ public class DialogManagerUI {
             String displayTitle = state.title().isEmpty() ? state.windowId() : state.title();
             sb.append(displayTitle.isEmpty() ? "(untitled)" : displayTitle);
 
-            // Position info
-            if (state.hasValidPosition()) {
-                sb.append(String.format("  |  Position: (%.0f, %.0f)", state.x(), state.y()));
-            }
-
-            // Size info
-            if (state.hasValidSize()) {
-                sb.append(String.format("  |  Size: %.0fx%.0f", state.width(), state.height()));
-            }
-
-            // Modal indicator
-            if (state.isModal()) {
-                sb.append("  |  [Modal]");
-            }
-
             // Off-screen warning
             DialogPositionManager mgr = DialogPositionManager.getInstance();
             if (!mgr.isPositionOnScreen(state) && state.hasValidPosition()) {

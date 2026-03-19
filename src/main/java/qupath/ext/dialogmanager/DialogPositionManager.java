@@ -515,6 +515,11 @@ public final class DialogPositionManager {
             return false;
         }
 
+        // Don't track windows in the global ignore list
+        if (DialogPositionPreferences.isIgnoredWindow(windowId)) {
+            return false;
+        }
+
         // If we're tracking all windows, include this one
         if (trackAllWindows) {
             return true;

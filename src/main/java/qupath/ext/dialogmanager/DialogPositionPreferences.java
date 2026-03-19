@@ -13,6 +13,7 @@ import qupath.lib.gui.prefs.PathPrefs;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Handles persistence of dialog positions using QuPath's preference system.
@@ -29,6 +30,14 @@ public final class DialogPositionPreferences {
 
     // Note: No pretty printing to stay within Java Preferences 8192 char limit
     private static final Gson GSON = new GsonBuilder().create();
+
+    /**
+     * Window titles that should never be persisted.
+     * These are internal QuPath dialogs that don't benefit from position management.
+     */
+    private static final Set<String> IGNORED_WINDOWS = Set.of(
+            "Quit QuPath"
+    );
 
     // Property for the raw JSON string storage
     private static ObjectProperty<String> positionsJsonProperty;
@@ -130,7 +139,7 @@ public final class DialogPositionPreferences {
                 String key = entry.getKey();
                 // Skip hash-code fallback IDs (e.g., "@926214965") - they are not reusable
                 // and cause the preferences to grow unboundedly
-                if (key != null && !key.startsWith("@")) {
+                if (key != null && !key.startsWith("@") && !isIgnoredWindow(key)) {
                     root.add(key, stateToJson(entry.getValue()));
                 }
             }
@@ -232,6 +241,13 @@ public final class DialogPositionPreferences {
         return Collections.unmodifiableMap(loadAll());
     }
 
+    /**
+     * Check if a window title is in the ignored list and should not be persisted.
+     */
+    public static boolean isIgnoredWindow(String windowId) {
+        return windowId != null && IGNORED_WINDOWS.contains(windowId);
+    }
+
     // --- Compact JSON serialization / deserialization ---
 
     /**
@@ -245,9 +261,8 @@ public final class DialogPositionPreferences {
         obj.addProperty("w", (int) Math.round(state.width()));
         obj.addProperty("h", (int) Math.round(state.height()));
         // Only include non-default values
-        if (state.modality() != Modality.NONE) {
-            obj.addProperty("m", state.modality().name());
-        }
+        // Note: modality is not persisted - it's intrinsic to the window type and
+        // will be set correctly when the window is recreated by its owning code
         if (state.screenIndex() != 0) {
             obj.addProperty("si", state.screenIndex());
         }
