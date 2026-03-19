@@ -1,5 +1,5 @@
 plugins {
-    id("com.gradleup.shadow") version "8.3.5"
+    id("com.gradleup.shadow") version "9.4.0"
     id("qupath-conventions")
 }
 
