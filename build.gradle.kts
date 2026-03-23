@@ -6,10 +6,10 @@ plugins {
 // Configure your extension here
 qupathExtension {
     name = "qupath-extension-dialog-manager"
-    group = "io.github.qupath"
+    group = "io.github.uw-loci"
     version = "0.3.4"
     description = "A QuPath extension for managing dialog window positions with persistence and recovery."
-    automaticModule = "io.github.qupath.extension.dialogmanager"
+    automaticModule = "io.github.uw-loci.extension.dialogmanager"
 }
 
 repositories {
