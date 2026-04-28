@@ -162,6 +162,10 @@ The extension JAR will be in `build/libs/`.
 - QuPath 0.6.0 or later
 - Java 21+
 
+## Support
+
+For general support and feature requests, please post on the [image.sc forum](https://forum.image.sc/) with the `#qupath` tag and mention `@Mike_Nelson` to flag the topic for my attention.
+
 ## License
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
