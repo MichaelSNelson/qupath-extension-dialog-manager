@@ -8,6 +8,7 @@ A QuPath extension that remembers and restores dialog window positions across se
 - **Off-screen recovery**: Automatically detects and recovers dialogs positioned on disconnected monitors
 - **HiDPI awareness**: Handles display scaling changes and mixed-DPI multi-monitor setups
 - **Track all dialogs by default**: Works out-of-the-box with any QuPath dialog
+- **Shared storage (0.4.0+)**: Point multiple workstations at one JSON file on a network drive to share dialog layouts across a core facility
 
 ## Installation
 
@@ -76,6 +77,24 @@ A dialog must be opened, positioned, and closed at least once before its positio
 
 ## Issues
 
+### Silent prune of saved positions (Fixed in v0.4.0)
+
+On installations with many tracked dialogs, the v0.3.x code would silently
+prune the oldest entries from saved positions on every save once the
+serialized JSON exceeded ~7500 characters. The visible symptom was a
+specific dialog (often Live Viewer in QPSC) appearing centered every time
+it opened, no matter how many times you reset and re-saved its position. The
+log showed:
+
+```
+WARN  DialogPositionPreferences  Dialog positions JSON too large (7548 chars), pruning entries
+```
+
+**Fix:** Update to 0.4.0+. Storage moved out of the size-capped Java
+Preferences entry into a JSON file with no practical size limit. On first
+launch after the upgrade, existing data is migrated and a one-time dialog
+shows the new file location.
+
 ### "Value too long" Error (Fixed in v0.2.0)
 
 In versions prior to 0.2.0, the extension could accumulate garbage entries in the preferences for dialogs that didn't have titles set. This caused the preferences JSON to exceed Java's 8192 byte limit, resulting in errors like:
@@ -127,13 +146,44 @@ Right-click on any dialog for a context menu with additional options.
 
 ### Position Storage
 
-Dialog positions are stored in QuPath's preferences system:
+**Since 0.4.0**, dialog positions are stored in a regular JSON file:
 
-- **Windows**: `%APPDATA%\QuPath\` (preferences file)
-- **macOS**: `~/Library/Preferences/` (QuPath preferences)
-- **Linux**: `~/.java/.userPrefs/` or equivalent
+```
+<QuPath user dir>/dialog-manager/positions.json
+```
 
-Positions are stored as JSON under the preference key `dialogManager.positions`, including:
+(The QuPath user directory is whatever `PathPrefs.userPathProperty()` is set
+to, defaulting to QuPath's per-OS user dir.) Writes are atomic via a
+temp-and-rename, so a crash mid-write cannot leave the file truncated.
+
+You can change this location at any time via
+**Window -> Dialog Position Manager... -> Storage file -> Browse...** A few
+useful patterns:
+
+- **Shared layout in a core facility**: point every workstation at one
+  `positions.json` on a network drive. Switching to a file that already
+  exists keeps its contents, so you can set up the layout once and have
+  every machine adopt it.
+- **Per-project layouts**: stash a `positions.json` next to a project and
+  switch when you open that project.
+- **Reset to default**: the **Use Default** button on the same panel.
+
+Earlier versions (<= 0.3.x) stored positions inside a single Java Preferences
+entry (`dialogManager.positions`). Because Java Preferences has an 8 KB
+per-key cap, the code soft-capped the serialized JSON at 7500 chars and
+**silently pruned the oldest entries on every save** once that was reached.
+On well-used installations this would lose frequently-saved positions one
+workflow at a time -- the symptom looked like a single dialog "forgetting"
+where you put it. On first launch after upgrading to 0.4.0, any data still
+in the legacy preference is migrated to the new file, the legacy entry is
+cleared, and a one-time dialog tells you where the file ended up.
+
+The main window position (one window, ~80 bytes of JSON) stays in QuPath's
+PathPrefs -- it never approached the cap and is read before the file system
+is touched on startup.
+
+Per-entry fields stored in the JSON:
+
 - Window position (x, y coordinates)
 - Window size (width, height)
 - Screen index (which monitor)
