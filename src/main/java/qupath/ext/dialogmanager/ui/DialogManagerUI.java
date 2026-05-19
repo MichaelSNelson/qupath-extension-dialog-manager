@@ -6,7 +6,9 @@ import javafx.collections.transformation.SortedList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
@@ -16,11 +18,13 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.control.SelectionMode;
 import javafx.scene.control.Separator;
 import javafx.scene.control.SeparatorMenuItem;
+import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+import javafx.stage.FileChooser;
 import javafx.stage.Modality;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
@@ -30,6 +34,8 @@ import qupath.ext.dialogmanager.DialogPositionManager;
 import qupath.ext.dialogmanager.DialogPositionPreferences;
 import qupath.ext.dialogmanager.DialogState;
 
+import java.io.File;
+import java.nio.file.Path;
 import java.util.Comparator;
 
 /**
@@ -50,6 +56,7 @@ public class DialogManagerUI {
 
     private static Stage stage;
     private Label mainWindowStatus;
+    private TextField storageFileField;
     private static DialogManagerUI instance;
 
     private final DialogPositionManager manager;
@@ -179,13 +186,86 @@ public class DialogManagerUI {
         HBox mainWindowBtnBox = new HBox(8, saveWindowBtn, restoreCheckbox);
         mainWindowBtnBox.setAlignment(Pos.CENTER_LEFT);
 
+        // --- Storage location ---
+        Label storageLabel = new Label("Storage file");
+        storageLabel.setStyle("-fx-font-size: 11px; -fx-font-weight: bold;");
+
+        storageFileField = new TextField(DialogPositionPreferences.getStorageFile().toString());
+        storageFileField.setEditable(false);
+        storageFileField.setTooltip(new Tooltip(
+                "Where saved dialog positions are stored. Point multiple\n"
+                        + "workstations at the same path on a shared drive to\n"
+                        + "share dialog layouts across a core facility."));
+        HBox.setHgrow(storageFileField, Priority.ALWAYS);
+
+        Button browseBtn = new Button("Browse...");
+        browseBtn.setTooltip(new Tooltip("Choose a JSON file for dialog-position storage."));
+        browseBtn.setOnAction(e -> chooseStorageFile());
+
+        Button resetStorageBtn = new Button("Use Default");
+        resetStorageBtn.setTooltip(new Tooltip(
+                "Reset to the default location under the QuPath user directory."));
+        resetStorageBtn.setOnAction(e -> resetStorageToDefault());
+
+        HBox storageBtnBox = new HBox(8, storageFileField, browseBtn, resetStorageBtn);
+        storageBtnBox.setAlignment(Pos.CENTER_LEFT);
+
         // Screen info
         Label screenInfo = createScreenInfoLabel();
 
         topBox.getChildren().addAll(descLabel, trackAllCheckbox, verboseLogCheckbox,
                 new Separator(), mainWindowLabel, mainWindowBtnBox, mainWindowStatus,
+                new Separator(), storageLabel, storageBtnBox,
                 new Separator(), screenInfo);
         return topBox;
+    }
+
+    /**
+     * Opens a FileChooser so the user can pick a JSON file for dialog-position
+     * storage, then hands it to {@link DialogPositionPreferences#setStorageFile}.
+     */
+    private void chooseStorageFile() {
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle("Choose dialog position storage file");
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("JSON files", "*.json"));
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("All files", "*.*"));
+
+        Path current = DialogPositionPreferences.getStorageFile();
+        if (current.getParent() != null && current.getParent().toFile().isDirectory()) {
+            chooser.setInitialDirectory(current.getParent().toFile());
+        }
+        chooser.setInitialFileName(current.getFileName().toString());
+
+        File chosen = chooser.showSaveDialog(stage);
+        if (chosen == null) {
+            return;
+        }
+        try {
+            DialogPositionPreferences.setStorageFile(chosen.toPath());
+            storageFileField.setText(DialogPositionPreferences.getStorageFile().toString());
+            logger.info("Dialog position storage file set to: {}", chosen);
+        } catch (Exception ex) {
+            logger.error("Failed to switch storage file to {}: {}", chosen, ex.getMessage(), ex);
+            Alert err = new Alert(Alert.AlertType.ERROR,
+                    "Could not use the selected file:\n" + ex.getMessage(),
+                    ButtonType.OK);
+            err.initOwner(stage);
+            err.showAndWait();
+        }
+    }
+
+    /**
+     * Reset storage to the default {@code <QuPath user dir>/dialog-manager/positions.json}.
+     */
+    private void resetStorageToDefault() {
+        try {
+            DialogPositionPreferences.setStorageFile(null);
+            storageFileField.setText(DialogPositionPreferences.getStorageFile().toString());
+            logger.info("Dialog position storage reset to default: {}",
+                    DialogPositionPreferences.getStorageFile());
+        } catch (Exception ex) {
+            logger.error("Failed to reset storage file: {}", ex.getMessage(), ex);
+        }
     }
 
     private Label createScreenInfoLabel() {

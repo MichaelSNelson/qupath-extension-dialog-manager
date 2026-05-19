@@ -1,6 +1,9 @@
 package qupath.ext.dialogmanager;
 
+import java.nio.file.Path;
 import javafx.application.Platform;
+import javafx.scene.control.Alert;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
@@ -105,8 +108,40 @@ public class DialogManagerExtension implements QuPathExtension {
         // Add menu items
         Platform.runLater(() -> addMenuItems(qupath));
 
+        // If preferences just migrated from the old PathPrefs entry into a JSON
+        // file, surface that to the user once -- they need to know the new
+        // location both because it explains a one-time JSON-too-large warning
+        // disappearing and because they may want to point it at a shared file.
+        Path pendingNotice = DialogPositionPreferences.getPendingMigrationNotice();
+        if (pendingNotice != null) {
+            Stage owner = qupath.getStage();
+            Platform.runLater(() -> showMigrationNotice(owner, pendingNotice));
+        }
+
         isInstalled = true;
         logger.info("{} installation complete", EXTENSION_NAME);
+    }
+
+    /**
+     * One-time notification: dialog positions moved from PathPrefs into a JSON
+     * file. Marks the notice shown so it doesn't fire on every startup.
+     */
+    private void showMigrationNotice(Stage owner, Path location) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("Dialog Position Manager: storage moved");
+        alert.setHeaderText("Saved dialog positions moved to a file");
+        alert.setContentText(
+                "To remove a length limit that was silently pruning saved positions, the "
+                        + "Dialog Position Manager now stores its data in a JSON file:\n\n"
+                        + location
+                        + "\n\nYou can change this location (for example, to share one file across "
+                        + "workstations in a core facility) from Window -> Dialog Position Manager.");
+        alert.getButtonTypes().setAll(ButtonType.OK);
+        if (owner != null) {
+            alert.initOwner(owner);
+        }
+        alert.showAndWait();
+        DialogPositionPreferences.markMigrationNoticeShown();
     }
 
     /**
