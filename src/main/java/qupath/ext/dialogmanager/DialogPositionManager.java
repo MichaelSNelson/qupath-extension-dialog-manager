@@ -14,7 +14,10 @@ import javafx.stage.Window;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -67,6 +70,12 @@ public final class DialogPositionManager {
 
     // Titles of windows to explicitly track (for testing specific dialogs)
     private final Set<String> targetedTitles = new HashSet<>();
+
+    // Title prefixes that collapse a family of dynamic titles ("Live Viewer
+    // (Brightfield) (10x)", "Live Viewer (PPM) (20x)", ...) onto a single
+    // canonical windowId. Insertion-ordered, but match-time we prefer the
+    // longest prefix so overlapping families pick the most specific one.
+    private final Set<String> titlePrefixAliases = new LinkedHashSet<>();
 
     // Whether to track all windows or only targeted ones (default: true for maximum usefulness)
     private boolean trackAllWindows = true;
@@ -146,6 +155,122 @@ public final class DialogPositionManager {
      */
     public void removeTargetedTitle(String title) {
         targetedTitles.remove(title);
+    }
+
+    /**
+     * Register a title prefix that should collapse a family of dynamic titles
+     * onto a single canonical windowId.
+     * <p>
+     * Example: registering {@code "Live Viewer"} causes titles like
+     * {@code "Live Viewer"}, {@code "Live Viewer (Brightfield)"} and
+     * {@code "Live Viewer (PPM) (10x)"} to all share one saved position under
+     * the canonical id {@code "Live Viewer"}. Without this, each unique title
+     * variant becomes its own entry in the position file, which defeats
+     * position persistence for dialogs whose title reflects mutable state.
+     * <p>
+     * Matching uses a word boundary: a title matches the prefix only if it
+     * either equals the prefix exactly or begins with the prefix followed by a
+     * space. {@code "Live Viewers"} (no space, plural) would NOT match
+     * {@code "Live Viewer"}.
+     * <p>
+     * Any already-saved entries that match the prefix are collapsed into the
+     * canonical id at registration time so users do not lose their existing
+     * positions across the upgrade.
+     *
+     * @param prefix non-empty title prefix; leading and trailing whitespace are ignored
+     */
+    public void addTitlePrefixAlias(String prefix) {
+        if (prefix == null) return;
+        String trimmed = prefix.trim();
+        if (trimmed.isEmpty()) return;
+        if (titlePrefixAliases.add(trimmed)) {
+            logger.debug("Added title prefix alias: '{}'", trimmed);
+            collapseExistingEntriesForPrefix(trimmed);
+        }
+    }
+
+    /**
+     * Stop collapsing titles under the given prefix. Existing saved entries
+     * that were already collapsed are not undone.
+     */
+    public void removeTitlePrefixAlias(String prefix) {
+        if (prefix == null) return;
+        titlePrefixAliases.remove(prefix.trim());
+    }
+
+    /**
+     * Collapse the given title to its canonical form if it matches any
+     * registered prefix alias; otherwise return the input unchanged. When
+     * several prefixes match (overlapping families) the longest one wins.
+     */
+    private String canonicalizeTitle(String title) {
+        if (title == null || titlePrefixAliases.isEmpty()) {
+            return title;
+        }
+        String best = null;
+        for (String prefix : titlePrefixAliases) {
+            if (matchesPrefix(title, prefix) && (best == null || prefix.length() > best.length())) {
+                best = prefix;
+            }
+        }
+        return best != null ? best : title;
+    }
+
+    private static boolean matchesPrefix(String title, String prefix) {
+        if (title.equals(prefix)) return true;
+        return title.length() > prefix.length()
+                && title.startsWith(prefix)
+                && title.charAt(prefix.length()) == ' ';
+    }
+
+    /**
+     * One-time sweep when an alias is registered: fold any pre-existing
+     * dynamic-title entries ({@code "Live Viewer (Brightfield) (10x)"}, ...)
+     * into the canonical key so the user's last position survives the upgrade.
+     * If the canonical key is already saved we keep it and discard the
+     * suffix variants; otherwise we promote a deterministic (lexicographically
+     * first) match.
+     */
+    private void collapseExistingEntriesForPrefix(String prefix) {
+        Map<String, DialogState> all = DialogPositionPreferences.loadAll();
+        List<String> matches = new ArrayList<>();
+        for (String key : all.keySet()) {
+            if (matchesPrefix(key, prefix)) {
+                matches.add(key);
+            }
+        }
+        if (matches.isEmpty()) {
+            return;
+        }
+        if (matches.size() == 1 && matches.get(0).equals(prefix)) {
+            return; // Only the canonical entry exists; nothing to do.
+        }
+
+        Collections.sort(matches);
+        DialogState source = all.containsKey(prefix) ? all.get(prefix) : all.get(matches.get(0));
+
+        DialogState canonical = new DialogState(
+                prefix, prefix,
+                source.x(), source.y(), source.width(), source.height(),
+                source.modality(), false,
+                source.screenIndex(), source.savedScaleX(), source.savedScaleY());
+
+        for (String key : matches) {
+            all.remove(key);
+        }
+        all.put(prefix, canonical);
+        DialogPositionPreferences.saveAll(all);
+
+        Platform.runLater(() -> {
+            dialogStates.removeIf(s -> s.windowId() != null && matchesPrefix(s.windowId(), prefix));
+            dialogStates.add(canonical);
+        });
+
+        int collapsed = matches.size() - (matches.contains(prefix) ? 1 : 0);
+        if (collapsed > 0) {
+            logger.info("Collapsed {} saved dialog entr{} under canonical '{}'",
+                    collapsed, collapsed == 1 ? "y" : "ies", prefix);
+        }
     }
 
     /**
@@ -686,8 +811,12 @@ public final class DialogPositionManager {
 
     private DialogState createStateFromWindow(Window window) {
         String windowId = getWindowId(window);
-        String title = (window instanceof Stage stage && stage.getTitle() != null)
+        String rawTitle = (window instanceof Stage stage && stage.getTitle() != null)
                 ? stage.getTitle() : windowId;
+        // Keep the displayed title in lockstep with windowId so an alias family
+        // shows as one stable entry instead of flickering through every dynamic
+        // suffix the underlying stage cycles through.
+        String title = canonicalizeTitle(rawTitle);
         Modality modality = (window instanceof Stage stage) ? stage.getModality() : Modality.NONE;
 
         // Determine which screen the window is primarily on and get its scale factors
@@ -731,9 +860,10 @@ public final class DialogPositionManager {
         if (window instanceof Stage stage) {
             String title = stage.getTitle();
             if (title != null && !title.isBlank()) {
-                // Normalize title: remove dynamic parts like file paths or image names
-                // For now, just use the title as-is
-                return title.trim();
+                // Collapse families of dynamic titles (e.g. modality- and
+                // objective-suffixed "Live Viewer" variants) onto a stable
+                // canonical id; see addTitlePrefixAlias.
+                return canonicalizeTitle(title.trim());
             }
         }
         // Fallback to class name + hash

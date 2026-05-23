@@ -164,6 +164,15 @@ public class DialogManagerExtension implements QuPathExtension {
         // This extension's own dialog (meta!)
         manager.addTargetedTitle("Dialog Position Manager");
 
+        // Dialogs whose title encodes mutable state (modality, objective, ...)
+        // are registered here so every variant collapses onto a single saved
+        // position. The QPSC Live Viewer rewrites its title to e.g.
+        // "Live Viewer (Brightfield) (10x)" / "Live Viewer (PPM) (20x)" as the
+        // user changes hardware; without this every combination would create
+        // its own entry and the saved position would not survive a modality
+        // switch.
+        manager.addTitlePrefixAlias("Live Viewer");
+
         logger.debug("Added {} default targeted dialogs", 11);
     }
 
