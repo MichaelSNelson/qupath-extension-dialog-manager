@@ -2,6 +2,8 @@
 
 A QuPath extension that remembers and restores dialog window positions across sessions, with automatic recovery for windows that become inaccessible (e.g., when a monitor is disconnected).
 
+![QuPath window with several tracked dialogs arranged around an H&E image, including a Live Viewer and Stage Map panel](images/qupath-window-with-tracked-dialogs.png)
+
 ## Features
 
 - **Automatic position persistence**: Dialog positions and sizes are saved when closed and restored when reopened
@@ -125,6 +127,8 @@ After running this script, restart QuPath. Your dialog positions will need to be
 ## Dialog Position Manager UI
 
 The management UI (**Window > Dialog Position Manager...**) shows:
+
+![Dialog Position Manager panel showing Track all dialogs and Verbose logging checkboxes, Save Current Position button with Restore on startup, the storage file path with Browse and Use Default buttons, a detected screens count, the list of open dialogs marked [OPEN], and the Center / Bring to Front / Reset Position / Clear All buttons](images/dialog-position-manager-panel.png)
 
 - **Green `[OPEN]` indicator**: Dialog is currently visible
 - **Orange `[OFF-SCREEN]` warning**: Saved position is not visible on any connected monitor
