@@ -1,7 +1,7 @@
 plugins {
     id("com.gradleup.shadow") version "8.3.5"
     id("qupath-conventions")
-    id("com.github.spotbugs") version "6.5.0"
+    id("com.github.spotbugs") version "6.5.6"
 }
 
 // Configure your extension here
