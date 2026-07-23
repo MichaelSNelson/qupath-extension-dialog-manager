@@ -38,7 +38,7 @@ public class DialogManagerExtension implements QuPathExtension {
     private static final String EXTENSION_NAME = "Dialog Position Manager";
     private static final String EXTENSION_DESCRIPTION =
             "Manage and persist dialog window positions with off-screen recovery.";
-    private static final Version EXTENSION_QUPATH_VERSION = Version.parse("v0.6.0");
+    private static final Version EXTENSION_QUPATH_VERSION = Version.parse("v0.7.0");
 
     private boolean isInstalled = false;
 

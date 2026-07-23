@@ -213,7 +213,7 @@ The extension JAR will be in `build/libs/`.
 
 ## Requirements
 
-- QuPath 0.6.0 or later
+- QuPath 0.7.0 or later
 - Java 21+
 
 ## Support
